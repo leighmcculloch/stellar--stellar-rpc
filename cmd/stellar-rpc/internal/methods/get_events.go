@@ -57,6 +57,10 @@ func combineEventTypes(filters []protocol.EventFilter) []int {
 
 	for _, filter := range filters {
 		for _, eventType := range filter.EventType.Keys() {
+			// Skip diagnostic events as per issue #402
+			if eventType == protocol.EventTypeDiagnostic {
+				continue
+			}
 			eventTypeXDR := protocol.GetEventTypeXDRFromEventType()[eventType]
 			eventTypes.Add(int(eventTypeXDR))
 		}

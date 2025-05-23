@@ -561,6 +561,16 @@ func TestGetEvents(t *testing.T) {
 			},
 			results,
 		)
+		
+		// Test that diagnostic events are NOT returned even when explicitly requested
+		results, err = handler.getEvents(context.TODO(), protocol.GetEventsRequest{
+			StartLedger: 1,
+			Filters: []protocol.EventFilter{
+				{EventType: map[string]interface{}{protocol.EventTypeDiagnostic: nil}},
+			},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, results.Events, "No diagnostic events should be returned even when explicitly requested")
 	})
 
 	t.Run("with limit", func(t *testing.T) {
@@ -769,6 +779,75 @@ func TestGetEvents(t *testing.T) {
 			},
 			results,
 		)
+	})
+	
+	t.Run("diagnostic events excluded from results", func(t *testing.T) {
+		dbx := newTestDB(t)
+		ctx := context.TODO()
+		log := log.DefaultLogger
+		log.SetLevel(logrus.TraceLevel)
+
+		writer := db.NewReadWriter(log, dbx, interfaces.MakeNoOpDeamon(), 10, 10, passphrase)
+		write, err := writer.NewTx(ctx)
+		require.NoError(t, err)
+		ledgerW, eventW := write.LedgerWriter(), write.EventWriter()
+		store := db.NewEventReader(log, dbx, passphrase)
+
+		contractID := xdr.Hash([32]byte{})
+		txMeta := []xdr.TransactionMeta{
+			transactionMetaWithEvents(
+				contractEvent(
+					contractID,
+					xdr.ScVec{
+						xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+					},
+					xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+				),
+				diagnosticEvent(
+					contractID,
+					xdr.ScVec{
+						xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+					},
+					xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+				),
+				systemEvent(
+					contractID,
+					xdr.ScVec{
+						xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+					},
+					xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+				),
+			),
+		}
+		ledgerCloseMeta := ledgerCloseMetaWithEvents(1, now.Unix(), txMeta...)
+		require.NoError(t, ledgerW.InsertLedger(ledgerCloseMeta), "ingestion failed for ledger ")
+		require.NoError(t, eventW.InsertEvents(ledgerCloseMeta), "ingestion failed for events ")
+		require.NoError(t, write.Commit(ledgerCloseMeta))
+
+		handler := eventsRPCHandler{
+			dbReader:     store,
+			maxLimit:     10000,
+			defaultLimit: 100,
+			ledgerReader: db.NewLedgerReader(dbx),
+		}
+		
+		// Query without any filters should return all events except diagnostic
+		results, err := handler.getEvents(context.TODO(), protocol.GetEventsRequest{
+			StartLedger: 1,
+		})
+		require.NoError(t, err)
+		
+		// Should only find 2 events (contract and system), not diagnostic
+		require.Equal(t, 2, len(results.Events))
+		
+		// Verify event types
+		var foundTypes []string
+		for _, event := range results.Events {
+			foundTypes = append(foundTypes, event.EventType)
+		}
+		assert.Contains(t, foundTypes, protocol.EventTypeContract)
+		assert.Contains(t, foundTypes, protocol.EventTypeSystem)
+		assert.NotContains(t, foundTypes, protocol.EventTypeDiagnostic)
 	})
 }
 
