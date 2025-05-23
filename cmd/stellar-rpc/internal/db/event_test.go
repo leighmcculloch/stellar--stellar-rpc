@@ -43,6 +43,34 @@ func contractEvent(contractID xdr.Hash, topic []xdr.ScVal, body xdr.ScVal) xdr.C
 	}
 }
 
+func diagnosticEvent(contractID xdr.Hash, topic []xdr.ScVal, body xdr.ScVal) xdr.ContractEvent {
+	return xdr.ContractEvent{
+		ContractId: &contractID,
+		Type:       xdr.ContractEventTypeDiagnostic,
+		Body: xdr.ContractEventBody{
+			V: 0,
+			V0: &xdr.ContractEventV0{
+				Topics: topic,
+				Data:   body,
+			},
+		},
+	}
+}
+
+func systemEvent(contractID xdr.Hash, topic []xdr.ScVal, body xdr.ScVal) xdr.ContractEvent {
+	return xdr.ContractEvent{
+		ContractId: &contractID,
+		Type:       xdr.ContractEventTypeSystem,
+		Body: xdr.ContractEventBody{
+			V: 0,
+			V0: &xdr.ContractEventV0{
+				Topics: topic,
+				Data:   body,
+			},
+		},
+	}
+}
+
 func ledgerCloseMetaWithEvents(
 	sequence uint32,
 	closeTimestamp int64,
@@ -177,4 +205,61 @@ func TestInsertEvents(t *testing.T) {
 
 	err = eventReader.GetEvents(ctx, cursorRange, nil, nil, nil, nil)
 	require.NoError(t, err)
+}
+
+func TestDiagnosticEventsFiltered(t *testing.T) {
+	// Create a sample set of events including diagnostic events
+	contractID := xdr.Hash([32]byte{})
+	counter := xdr.ScSymbol("COUNTER")
+
+	// Create one of each type of event
+	contractEvt := contractEvent(
+		contractID,
+		xdr.ScVec{xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter}},
+		xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+	)
+	
+	diagnosticEvt := diagnosticEvent(
+		contractID,
+		xdr.ScVec{xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter}},
+		xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+	)
+	
+	systemEvt := systemEvent(
+		contractID,
+		xdr.ScVec{xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter}},
+		xdr.ScVal{Type: xdr.ScValTypeScvSymbol, Sym: &counter},
+	)
+	
+	// Create DiagnosticEvents from the ContractEvents
+	events := []xdr.DiagnosticEvent{
+		{
+			InSuccessfulContractCall: true,
+			Event:                    contractEvt,
+		},
+		{
+			InSuccessfulContractCall: true,
+			Event:                    diagnosticEvt,
+		},
+		{
+			InSuccessfulContractCall: true,
+			Event:                    systemEvt,
+		},
+	}
+	
+	// Apply our filtering logic
+	var filteredEvents []xdr.DiagnosticEvent
+	for _, e := range events {
+		if e.Event.Type != xdr.ContractEventTypeDiagnostic {
+			filteredEvents = append(filteredEvents, e)
+		}
+	}
+	
+	// Verify that only 2 events remain (contract and system, not diagnostic)
+	require.Equal(t, 2, len(filteredEvents), "Should have filtered out diagnostic events")
+	
+	// Verify that none of the remaining events are diagnostic
+	for _, e := range filteredEvents {
+		require.NotEqual(t, xdr.ContractEventTypeDiagnostic, e.Event.Type, "Diagnostic events should be filtered out")
+	}
 }

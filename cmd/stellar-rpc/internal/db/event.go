@@ -97,6 +97,21 @@ func (eventHandler *eventHandler) InsertEvents(lcm xdr.LedgerCloseMeta) error {
 		if len(txEvents) == 0 {
 			continue
 		}
+		
+		// Filter out diagnostic events as they should not be stored in the database
+		var filteredEvents []xdr.DiagnosticEvent
+		for _, e := range txEvents {
+			if e.Event.Type != xdr.ContractEventTypeDiagnostic {
+				filteredEvents = append(filteredEvents, e)
+			}
+		}
+		
+		if len(filteredEvents) == 0 {
+			continue
+		}
+		
+		// Use filtered events for storage
+		txEvents = filteredEvents
 
 		query := sq.Insert(eventTableName).
 			Columns(
