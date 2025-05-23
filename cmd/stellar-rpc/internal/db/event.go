@@ -89,29 +89,25 @@ func (eventHandler *eventHandler) InsertEvents(lcm xdr.LedgerCloseMeta) error {
 
 		transactionHash := tx.Result.TransactionHash[:]
 
-		txEvents, err := tx.GetDiagnosticEvents()
-		if err != nil {
-			return err
+		// Get contract events directly instead of going through diagnostic events
+		if tx.UnsafeMeta.V != 3 || tx.UnsafeMeta.V3 == nil || tx.UnsafeMeta.V3.SorobanMeta == nil {
+			continue
 		}
 
-		if len(txEvents) == 0 {
+		// Get contract events directly from SorobanMeta.Events (these exclude diagnostic events)
+		contractEvents := tx.UnsafeMeta.V3.SorobanMeta.Events
+		if len(contractEvents) == 0 {
 			continue
 		}
-		
-		// Filter out diagnostic events as they should not be stored in the database
-		var filteredEvents []xdr.DiagnosticEvent
-		for _, e := range txEvents {
-			if e.Event.Type != xdr.ContractEventTypeDiagnostic {
-				filteredEvents = append(filteredEvents, e)
+
+		// Convert contract events to diagnostic events format required for storage
+		txEvents := make([]xdr.DiagnosticEvent, len(contractEvents))
+		for i, event := range contractEvents {
+			txEvents[i] = xdr.DiagnosticEvent{
+				InSuccessfulContractCall: true,
+				Event:                    event,
 			}
 		}
-		
-		if len(filteredEvents) == 0 {
-			continue
-		}
-		
-		// Use filtered events for storage
-		txEvents = filteredEvents
 
 		query := sq.Insert(eventTableName).
 			Columns(
