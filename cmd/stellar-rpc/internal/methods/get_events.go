@@ -55,12 +55,21 @@ func combineContractIDs(filters []protocol.EventFilter) ([][]byte, error) {
 func combineEventTypes(filters []protocol.EventFilter) []int {
 	eventTypes := set.NewSet[int](maxEventTypes)
 
+	hasEventTypeFilters := false
 	for _, filter := range filters {
 		for _, eventType := range filter.EventType.Keys() {
+			hasEventTypeFilters = true
 			eventTypeXDR := protocol.GetEventTypeXDRFromEventType()[eventType]
 			eventTypes.Add(int(eventTypeXDR))
 		}
 	}
+	
+	// If no filters provided or no event type filters are specified, default to Contract and System events only
+	if len(filters) == 0 || !hasEventTypeFilters {
+		eventTypes.Add(int(protocol.GetEventTypeXDRFromEventType()[protocol.EventTypeContract]))
+		eventTypes.Add(int(protocol.GetEventTypeXDRFromEventType()[protocol.EventTypeSystem]))
+	}
+	
 	uniqueEventTypes := make([]int, 0, maxEventTypes)
 	for eventType := range eventTypes {
 		uniqueEventTypes = append(uniqueEventTypes, eventType)
