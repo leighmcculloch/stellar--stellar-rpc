@@ -48,7 +48,7 @@ func TestEventTypeSetMatches(t *testing.T) {
 		{
 			"all matches Diagnostic events",
 			all,
-			systemEvent,
+			diagnosticEvent,
 			true,
 		},
 		{
@@ -64,10 +64,10 @@ func TestEventTypeSetMatches(t *testing.T) {
 			true,
 		},
 		{
-			"defaultSet matches Diagnostic events",
+			"defaultSet does not match Diagnostic events",
 			defaultSet,
-			systemEvent,
-			true,
+			diagnosticEvent,
+			false,
 		},
 		{
 			"onlyContract set matches Contract events",
@@ -83,15 +83,54 @@ func TestEventTypeSetMatches(t *testing.T) {
 		},
 		{
 			"onlyContract does not match Diagnostic events",
-			defaultSet,
+			onlyContract,
 			diagnosticEvent,
-			true,
+			false,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			assert.Equal(t, testCase.matches, testCase.set.matches(testCase.event))
 		})
 	}
+}
+
+func TestDefaultEventTypeFiltering(t *testing.T) {
+	// Test the new default behavior: exclude Diagnostic events by default
+	contractDiagEvent := xdr.DiagnosticEvent{
+		Event: xdr.ContractEvent{Type: xdr.ContractEventTypeContract},
+	}
+	systemDiagEvent := xdr.DiagnosticEvent{
+		Event: xdr.ContractEvent{Type: xdr.ContractEventTypeSystem},
+	}
+	diagnosticDiagEvent := xdr.DiagnosticEvent{
+		Event: xdr.ContractEvent{Type: xdr.ContractEventTypeDiagnostic},
+	}
+	
+	// Request with no filters - should exclude Diagnostic by default
+	requestNoFilters := GetEventsRequest{Filters: []EventFilter{}}
+	assert.True(t, requestNoFilters.Matches(contractDiagEvent), "No filters should match Contract events")
+	assert.True(t, requestNoFilters.Matches(systemDiagEvent), "No filters should match System events")
+	assert.False(t, requestNoFilters.Matches(diagnosticDiagEvent), "No filters should NOT match Diagnostic events")
+	
+	// Request with filters but no event type specified - should exclude Diagnostic by default
+	requestWithEmptyFilter := GetEventsRequest{
+		Filters: []EventFilter{
+			{}, // Empty filter - no event type specified
+		},
+	}
+	assert.True(t, requestWithEmptyFilter.Matches(contractDiagEvent), "Empty filter should match Contract events")
+	assert.True(t, requestWithEmptyFilter.Matches(systemDiagEvent), "Empty filter should match System events")
+	assert.False(t, requestWithEmptyFilter.Matches(diagnosticDiagEvent), "Empty filter should NOT match Diagnostic events")
+	
+	// Request that explicitly includes Diagnostic events should still work
+	requestWithDiagnostic := GetEventsRequest{
+		Filters: []EventFilter{
+			{EventType: EventTypeSet{EventTypeDiagnostic: nil}},
+		},
+	}
+	assert.False(t, requestWithDiagnostic.Matches(contractDiagEvent), "Diagnostic filter should not match Contract events")
+	assert.False(t, requestWithDiagnostic.Matches(systemDiagEvent), "Diagnostic filter should not match System events")
+	assert.True(t, requestWithDiagnostic.Matches(diagnosticDiagEvent), "Diagnostic filter should match Diagnostic events")
 }
 
 func TestEventTypeSetValid(t *testing.T) {

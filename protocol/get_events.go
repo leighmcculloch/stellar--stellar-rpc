@@ -140,7 +140,9 @@ func (e EventTypeSet) Keys() []string {
 
 func (e EventTypeSet) matches(event xdr.ContractEvent) bool {
 	if len(e) == 0 {
-		return true
+		// Default to Contract and System events only, excluding Diagnostic
+		eventTypeName := GetEventTypeFromEventTypeXDR()[event.Type]
+		return eventTypeName == EventTypeContract || eventTypeName == EventTypeSystem
 	}
 	_, ok := e[GetEventTypeFromEventTypeXDR()[event.Type]]
 	return ok
@@ -193,7 +195,9 @@ func (g *GetEventsRequest) Valid(maxLimit uint) error {
 
 func (g *GetEventsRequest) Matches(event xdr.DiagnosticEvent) bool {
 	if len(g.Filters) == 0 {
-		return true
+		// Default to Contract and System events only, excluding Diagnostic
+		eventTypeName := GetEventTypeFromEventTypeXDR()[event.Event.Type]
+		return eventTypeName == EventTypeContract || eventTypeName == EventTypeSystem
 	}
 	for _, filter := range g.Filters {
 		if filter.Matches(event) {
